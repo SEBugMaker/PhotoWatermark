@@ -3,9 +3,12 @@
 这是一个Java命令行程序，用于给图片添加基于EXIF拍摄时间的水印。
 
 ## 功能特点
-- 读取图片的EXIF信息，提取拍摄时间作为水印文本
-- 允许用户自定义字体大小、颜色和水印位置
-- 将处理后的图片保存在原目录下的专用子目录中
+- 从图片EXIF信息中提取拍摄时间
+- 支持自定义水印字体大小（默认36）
+- 支持自定义水印字体颜色（默认WHITE，可选：BLACK, RED, GREEN, BLUE, YELLOW）
+- 支持自定义水印位置（默认BOTTOM_RIGHT，可选：TOP_LEFT, TOP_CENTER, TOP_RIGHT, MIDDLE_LEFT, CENTER, MIDDLE_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER）
+- 支持处理单个图片或整个目录的图片
+- 自动创建输出目录并保存处理后的图片
 
 ## 环境要求
 - JDK 17或更高版本
