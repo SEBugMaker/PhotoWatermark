@@ -53,10 +53,15 @@ public class PhotoWatermarkApp {
         String positionStr = scanner.nextLine();
         WatermarkPosition position = getPositionFromString(positionStr.isEmpty() ? "BOTTOM_RIGHT" : positionStr);
 
+        // 获取用户设置的输出格式
+        System.out.print("请输入输出图片格式 (JPEG/PNG，默认: JPEG): ");
+        String outputFormatStr = scanner.nextLine();
+        String outputFormat = outputFormatStr.isEmpty() ? "JPEG" : outputFormatStr.toUpperCase();
+
         try {
             if (inputPath.isFile()) {
                 // 处理单个图片文件
-                processImage(inputPath, fontSize, color, position);
+                processImage(inputPath, fontSize, color, position, outputFormat);
                 System.out.println("水印添加成功！");
             } else if (inputPath.isDirectory()) {
                 // 处理目录中的所有图片文件
@@ -64,7 +69,7 @@ public class PhotoWatermarkApp {
                     String lowerName = name.toLowerCase();
                     return lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
                            lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
-                           lowerName.endsWith(".bmp");
+                           lowerName.endsWith(".bmp") || lowerName.endsWith(".tif") || lowerName.endsWith(".tiff");
                 });
                 
                 if (files == null || files.length == 0) {
@@ -74,7 +79,7 @@ public class PhotoWatermarkApp {
                     int successCount = 0;
                     for (File file : files) {
                         try {
-                            processImage(file, fontSize, color, position);
+                            processImage(file, fontSize, color, position, outputFormat);
                             successCount++;
                         } catch (Exception e) {
                             System.out.println("处理文件 " + file.getName() + " 时出错: " + e.getMessage());
@@ -113,7 +118,7 @@ public class PhotoWatermarkApp {
     }
 
     // 处理图片并添加水印
-    private static void processImage(File imageFile, int fontSize, Color color, WatermarkPosition position) throws IOException, ParseException {
+    private static void processImage(File imageFile, int fontSize, Color color, WatermarkPosition position, String outputFormat) throws IOException, ParseException {
         // 读取图片
         BufferedImage image = ImageIO.read(imageFile);
 
@@ -208,9 +213,14 @@ public class PhotoWatermarkApp {
 
         // 保存图片
         String outputFileName = "watermarked_" + imageFile.getName();
+        // 修改输出文件扩展名
+        if (outputFormat.equals("PNG")) {
+            outputFileName = outputFileName.replaceAll("\\.[^.]+$", ".png");
+        } else {
+            outputFileName = outputFileName.replaceAll("\\.[^.]+$", ".jpg");
+        }
         File outputFile = new File(outputDir, outputFileName);
-        String formatName = getImageFormat(imageFile.getName());
-        ImageIO.write(image, formatName, outputFile);
+        ImageIO.write(image, outputFormat, outputFile);
 
         System.out.println("图片已保存至: " + outputFile.getAbsolutePath());
     }
@@ -244,5 +254,98 @@ public class PhotoWatermarkApp {
             return fileName.substring(dotIndex + 1).toUpperCase();
         }
         return "JPG";
+    }
+
+    public static void processImageGUI(File imageFile, File outputFile, int fontSize, String colorStr, String positionStr, String outputFormat, int jpegQuality, int width, int height, double scale) {
+        try {
+            BufferedImage image = ImageIO.read(imageFile);
+            int newW = image.getWidth(), newH = image.getHeight();
+            if (scale > 0) {
+                newW = (int)(image.getWidth() * scale);
+                newH = (int)(image.getHeight() * scale);
+            } else {
+                if (width > 0) newW = width;
+                if (height > 0) newH = height;
+            }
+            if (newW != image.getWidth() || newH != image.getHeight()) {
+                Image scaled = image.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
+                BufferedImage scaledImg = new BufferedImage(newW, newH, image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType());
+                Graphics2D g2d = scaledImg.createGraphics();
+                g2d.drawImage(scaled, 0, 0, null);
+                g2d.dispose();
+                image = scaledImg;
+            }
+            String watermarkText = getExifDateTime(imageFile);
+            if (watermarkText == null) {
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                watermarkText = dateFormat.format(new Date());
+            }
+            Graphics2D g2d = image.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Font font = new Font("Arial", Font.PLAIN, fontSize);
+            g2d.setFont(font);
+            g2d.setColor(getColorFromString(colorStr));
+            FontMetrics fontMetrics = g2d.getFontMetrics();
+            int textWidth = fontMetrics.stringWidth(watermarkText);
+            int textHeight = fontMetrics.getHeight();
+            int x = 0, y = 0;
+            int padding = 20;
+            WatermarkPosition position = getPositionFromString(positionStr);
+            switch (position) {
+                case TOP_LEFT:
+                    x = padding;
+                    y = padding + textHeight - fontMetrics.getDescent();
+                    break;
+                case TOP_CENTER:
+                    x = (image.getWidth() - textWidth) / 2;
+                    y = padding + textHeight - fontMetrics.getDescent();
+                    break;
+                case TOP_RIGHT:
+                    x = image.getWidth() - textWidth - padding;
+                    y = padding + textHeight - fontMetrics.getDescent();
+                    break;
+                case MIDDLE_LEFT:
+                    x = padding;
+                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
+                    break;
+                case CENTER:
+                    x = (image.getWidth() - textWidth) / 2;
+                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
+                    break;
+                case MIDDLE_RIGHT:
+                    x = image.getWidth() - textWidth - padding;
+                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
+                    break;
+                case BOTTOM_LEFT:
+                    x = padding;
+                    y = image.getHeight() - padding - fontMetrics.getDescent();
+                    break;
+                case BOTTOM_CENTER:
+                    x = (image.getWidth() - textWidth) / 2;
+                    y = image.getHeight() - padding - fontMetrics.getDescent();
+                    break;
+                case BOTTOM_RIGHT:
+                    x = image.getWidth() - textWidth - padding;
+                    y = image.getHeight() - padding - fontMetrics.getDescent();
+                    break;
+            }
+            g2d.drawString(watermarkText, x, y);
+            g2d.dispose();
+            if (outputFormat.equals("JPEG")) {
+                javax.imageio.ImageWriteParam param = new javax.imageio.plugins.jpeg.JPEGImageWriteParam(null);
+                param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(jpegQuality / 100f);
+                javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpg").next();
+                javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(outputFile);
+                writer.setOutput(ios);
+                writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
+                ios.close();
+                writer.dispose();
+            } else {
+                ImageIO.write(image, outputFormat, outputFile);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
