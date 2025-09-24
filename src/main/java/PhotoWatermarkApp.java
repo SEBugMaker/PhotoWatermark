@@ -9,6 +9,7 @@ import javax.imageio.ImageWriteParam;
 import javax.imageio.stream.FileImageOutputStream;
 import javax.imageio.IIOImage;
 import java.awt.*;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -260,7 +261,7 @@ public class PhotoWatermarkApp {
         return "JPG";
     }
 
-    public static void processImageWithImageWatermark(File imageFile, File outputFile, File watermarkImageFile, String positionStr, String outputFormat, int jpegQuality, int width, int height, double scale, double watermarkScale, int watermarkOpacity) {
+    public static void processImageWithImageWatermark(File imageFile, File outputFile, File watermarkImageFile, String positionStr, String outputFormat, int jpegQuality, int width, int height, double scale, double watermarkScale, int watermarkOpacity, double rotationDegrees) {
         try {
             // 1. Load the source image
             BufferedImage image = ImageIO.read(imageFile);
@@ -278,9 +279,9 @@ public class PhotoWatermarkApp {
             if (newW != image.getWidth() || newH != image.getHeight()) {
                 Image scaled = image.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
                 BufferedImage scaledImg = new BufferedImage(newW, newH, image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType());
-                Graphics2D g2d = scaledImg.createGraphics();
-                g2d.drawImage(scaled, 0, 0, null);
-                g2d.dispose();
+                Graphics2D g2dScale = scaledImg.createGraphics();
+                g2dScale.drawImage(scaled, 0, 0, null);
+                g2dScale.dispose();
                 image = scaledImg;
             }
 
@@ -290,21 +291,23 @@ public class PhotoWatermarkApp {
             // 4. Scale the watermark image
             int wmWidth = (int)(watermark.getWidth() * watermarkScale);
             int wmHeight = (int)(watermark.getHeight() * watermarkScale);
+            wmWidth = Math.max(1, wmWidth); wmHeight = Math.max(1, wmHeight);
             Image scaledWatermark = watermark.getScaledInstance(wmWidth, wmHeight, Image.SCALE_SMOOTH);
             BufferedImage scaledWatermarkImg = new BufferedImage(wmWidth, wmHeight, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g = scaledWatermarkImg.createGraphics();
-            g.drawImage(scaledWatermark, 0, 0, null);
-            g.dispose();
+            Graphics2D gW = scaledWatermarkImg.createGraphics();
+            gW.drawImage(scaledWatermark, 0, 0, null);
+            gW.dispose();
 
-            // 5. Get the final Graphics2D object and set opacity
+            // 5. Prepare graphics
             Graphics2D g2d = image.createGraphics();
             g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, watermarkOpacity / 100f));
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            // 6. Calculate watermark position
+            // 6. Calculate position (unrotated bounding box inside)
             int x = 0, y = 0;
             int padding = 20;
             WatermarkPosition position = getPositionFromString(positionStr);
-
             switch (position) {
                 case TOP_LEFT:      x = padding; y = padding; break;
                 case TOP_CENTER:    x = (image.getWidth() - wmWidth) / 2; y = padding; break;
@@ -317,11 +320,16 @@ public class PhotoWatermarkApp {
                 case BOTTOM_RIGHT:  x = image.getWidth() - wmWidth - padding; y = image.getHeight() - wmHeight - padding; break;
             }
 
-            // 7. Draw the watermark
+            double rad = Math.toRadians(rotationDegrees);
+            double cx = x + wmWidth / 2.0;
+            double cy = y + wmHeight / 2.0;
+            AffineTransform oldTx = g2d.getTransform();
+            g2d.rotate(rad, cx, cy);
             g2d.drawImage(scaledWatermarkImg, x, y, null);
+            g2d.setTransform(oldTx);
             g2d.dispose();
 
-            // 8. Save the final image
+            // 8. Save
             if ("PNG".equalsIgnoreCase(outputFormat)) {
                 ImageIO.write(image, "PNG", outputFile);
             } else {
@@ -341,7 +349,7 @@ public class PhotoWatermarkApp {
         }
     }
 
-    public static void processImageGUI(File imageFile, File outputFile, int fontSize, Color color, String positionStr, String outputFormat, int jpegQuality, int width, int height, double scale, String watermarkText, String fontName, int opacity, boolean shadow, boolean stroke, boolean bold, boolean italic) {
+    public static void processImageGUI(File imageFile, File outputFile, int fontSize, Color color, String positionStr, String outputFormat, int jpegQuality, int width, int height, double scale, String watermarkText, String fontName, int opacity, boolean shadow, boolean stroke, boolean bold, boolean italic, double rotationDegrees) {
         try {
             BufferedImage image = ImageIO.read(imageFile);
             int newW = image.getWidth(), newH = image.getHeight();
@@ -355,9 +363,9 @@ public class PhotoWatermarkApp {
             if (newW != image.getWidth() || newH != image.getHeight()) {
                 Image scaled = image.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
                 BufferedImage scaledImg = new BufferedImage(newW, newH, image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType());
-                Graphics2D g2d = scaledImg.createGraphics();
-                g2d.drawImage(scaled, 0, 0, null);
-                g2d.dispose();
+                Graphics2D g2dScale = scaledImg.createGraphics();
+                g2dScale.drawImage(scaled, 0, 0, null);
+                g2dScale.dispose();
                 image = scaledImg;
             }
             Graphics2D g2d = image.createGraphics();
@@ -373,55 +381,31 @@ public class PhotoWatermarkApp {
             g2d.setColor(watermarkColor);
             FontMetrics fontMetrics = g2d.getFontMetrics();
             int textWidth = fontMetrics.stringWidth(watermarkText);
-            int textHeight = fontMetrics.getHeight();
+            int textHeight = fontMetrics.getAscent();
             int x = 0, y = 0;
             int padding = 20;
             WatermarkPosition position = getPositionFromString(positionStr);
             switch (position) {
-                case TOP_LEFT:
-                    x = padding;
-                    y = padding + textHeight - fontMetrics.getDescent();
-                    break;
-                case TOP_CENTER:
-                    x = (image.getWidth() - textWidth) / 2;
-                    y = padding + textHeight - fontMetrics.getDescent();
-                    break;
-                case TOP_RIGHT:
-                    x = image.getWidth() - textWidth - padding;
-                    y = padding + textHeight - fontMetrics.getDescent();
-                    break;
-                case MIDDLE_LEFT:
-                    x = padding;
-                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
-                    break;
-                case CENTER:
-                    x = (image.getWidth() - textWidth) / 2;
-                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
-                    break;
-                case MIDDLE_RIGHT:
-                    x = image.getWidth() - textWidth - padding;
-                    y = (image.getHeight() + textHeight) / 2 - fontMetrics.getDescent();
-                    break;
-                case BOTTOM_LEFT:
-                    x = padding;
-                    y = image.getHeight() - padding - fontMetrics.getDescent();
-                    break;
-                case BOTTOM_CENTER:
-                    x = (image.getWidth() - textWidth) / 2;
-                    y = image.getHeight() - padding - fontMetrics.getDescent();
-                    break;
-                case BOTTOM_RIGHT:
-                    x = image.getWidth() - textWidth - padding;
-                    y = image.getHeight() - padding - fontMetrics.getDescent();
-                    break;
+                case TOP_LEFT: x = padding; y = padding + textHeight; break;
+                case TOP_CENTER: x = (image.getWidth() - textWidth) / 2; y = padding + textHeight; break;
+                case TOP_RIGHT: x = image.getWidth() - textWidth - padding; y = padding + textHeight; break;
+                case MIDDLE_LEFT: x = padding; y = (image.getHeight() + textHeight) / 2; break;
+                case CENTER: x = (image.getWidth() - textWidth) / 2; y = (image.getHeight() + textHeight) / 2; break;
+                case MIDDLE_RIGHT: x = image.getWidth() - textWidth - padding; y = (image.getHeight() + textHeight) / 2; break;
+                case BOTTOM_LEFT: x = padding; y = image.getHeight() - padding; break;
+                case BOTTOM_CENTER: x = (image.getWidth() - textWidth) / 2; y = image.getHeight() - padding; break;
+                case BOTTOM_RIGHT: x = image.getWidth() - textWidth - padding; y = image.getHeight() - padding; break;
             }
-            // 阴影效果
+            double rad = Math.toRadians(rotationDegrees);
+            double cx = x + textWidth / 2.0;
+            double cy = (y - textHeight) + textHeight / 2.0; // y baseline; top = y - textHeight
+            AffineTransform old = g2d.getTransform();
+            g2d.rotate(rad, cx, cy);
             if (shadow) {
                 g2d.setColor(new Color(0,0,0,(int)(opacity * 1.5)));
                 g2d.drawString(watermarkText, x+2, y+2);
                 g2d.setColor(watermarkColor);
             }
-            // 描边效果
             if (stroke) {
                 g2d.setStroke(new BasicStroke(2f));
                 g2d.setColor(Color.WHITE);
@@ -429,11 +413,161 @@ public class PhotoWatermarkApp {
                 g2d.setColor(watermarkColor);
             }
             g2d.drawString(watermarkText, x, y);
+            g2d.setTransform(old);
             g2d.dispose();
             if ("PNG".equalsIgnoreCase(outputFormat)) {
                 ImageIO.write(image, "PNG", outputFile);
             } else {
-                // JPEG 需处理压缩质量
+                ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+                ImageWriteParam param = writer.getDefaultWriteParam();
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(jpegQuality / 100f);
+                FileImageOutputStream output = new FileImageOutputStream(outputFile);
+                writer.setOutput(output);
+                writer.write(null, new IIOImage(image, null, null), param);
+                output.close();
+                writer.dispose();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void processImageGUICustom(File imageFile, File outputFile, int fontSize, Color color, String outputFormat, int jpegQuality, int width, int height, double scale, String watermarkText, String fontName, int opacity, boolean shadow, boolean stroke, boolean bold, boolean italic, int customX, int customY, double rotationDegrees) {
+        try {
+            BufferedImage image = ImageIO.read(imageFile);
+            int origW = image.getWidth();
+            int origH = image.getHeight();
+            int newW = origW, newH = origH;
+            if (scale > 0 && scale != 1.0) {
+                newW = (int)(origW * scale);
+                newH = (int)(origH * scale);
+            } else {
+                if (width > 0) newW = width;
+                if (height > 0) newH = height;
+            }
+            if (newW != origW || newH != origH) {
+                Image scaled = image.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
+                BufferedImage scaledImg = new BufferedImage(newW, newH, image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType());
+                Graphics2D g2Scale = scaledImg.createGraphics();
+                g2Scale.drawImage(scaled, 0, 0, null);
+                g2Scale.dispose();
+                image = scaledImg;
+            }
+            double fx = (double)newW / origW;
+            double fy = (double)newH / origH;
+            int drawXTop = (int)Math.round(customX * fx);
+            int drawYTop = (int)Math.round(customY * fy);
+
+            Graphics2D g2d = image.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int fontStyle = Font.PLAIN;
+            if (bold && italic) fontStyle = Font.BOLD | Font.ITALIC;
+            else if (bold) fontStyle = Font.BOLD;
+            else if (italic) fontStyle = Font.ITALIC;
+            if ("Arial".equals(fontName) || "系统字体".equals(fontName)) fontName = "Arial";
+            Font font = new Font(fontName, fontStyle, fontSize);
+            g2d.setFont(font);
+            Color watermarkColor = new Color(color.getRed(), color.getGreen(), color.getBlue(), (int)(opacity * 2.55));
+            g2d.setColor(watermarkColor);
+            FontMetrics fm = g2d.getFontMetrics();
+            int textWidth = fm.stringWidth(watermarkText);
+            int textAscent = fm.getAscent();
+            int x = Math.max(0, Math.min(drawXTop, newW - textWidth));
+            int yTop = Math.max(0, Math.min(drawYTop, newH - textAscent));
+            int yBase = yTop + textAscent;
+            double rad = Math.toRadians(rotationDegrees);
+            double cx = x + textWidth / 2.0;
+            double cy = yTop + textAscent / 2.0;
+            AffineTransform old = g2d.getTransform();
+            g2d.rotate(rad, cx, cy);
+            if (shadow) {
+                g2d.setColor(new Color(0,0,0,(int)(opacity * 1.5)));
+                g2d.drawString(watermarkText, x+2, yBase+2);
+                g2d.setColor(watermarkColor);
+            }
+            if (stroke) {
+                g2d.setStroke(new BasicStroke(2f));
+                g2d.setColor(Color.WHITE);
+                g2d.drawString(watermarkText, x-1, yBase-1);
+                g2d.setColor(watermarkColor);
+            }
+            g2d.drawString(watermarkText, x, yBase);
+            g2d.setTransform(old);
+            g2d.dispose();
+
+            if ("PNG".equalsIgnoreCase(outputFormat)) {
+                ImageIO.write(image, "PNG", outputFile);
+            } else {
+                ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+                ImageWriteParam param = writer.getDefaultWriteParam();
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(jpegQuality / 100f);
+                FileImageOutputStream output = new FileImageOutputStream(outputFile);
+                writer.setOutput(output);
+                writer.write(null, new IIOImage(image, null, null), param);
+                output.close();
+                writer.dispose();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void processImageWithImageWatermarkCustom(File imageFile, File outputFile, File watermarkImageFile, String outputFormat, int jpegQuality, int width, int height, double scale, double watermarkScale, int watermarkOpacity, int customX, int customY, double rotationDegrees) {
+        try {
+            BufferedImage image = ImageIO.read(imageFile);
+            int origW = image.getWidth();
+            int origH = image.getHeight();
+            int newW = origW, newH = origH;
+            if (scale > 0 && scale != 1.0) {
+                newW = (int)(origW * scale);
+                newH = (int)(origH * scale);
+            } else {
+                if (width > 0) newW = width;
+                if (height > 0) newH = height;
+            }
+            if (newW != origW || newH != origH) {
+                Image scaled = image.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
+                BufferedImage scaledImg = new BufferedImage(newW, newH, image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType());
+                Graphics2D g2Scale = scaledImg.createGraphics();
+                g2Scale.drawImage(scaled, 0, 0, null);
+                g2Scale.dispose();
+                image = scaledImg;
+            }
+            double fx = (double)newW / origW;
+            double fy = (double)newH / origH;
+            int drawX = (int)Math.round(customX * fx);
+            int drawY = (int)Math.round(customY * fy);
+
+            BufferedImage watermark = ImageIO.read(watermarkImageFile);
+            int wmWidth = Math.max(1, (int)(watermark.getWidth() * watermarkScale));
+            int wmHeight = Math.max(1, (int)(watermark.getHeight() * watermarkScale));
+            Image scaledWatermark = watermark.getScaledInstance(wmWidth, wmHeight, Image.SCALE_SMOOTH);
+            BufferedImage scaledWatermarkImg = new BufferedImage(wmWidth, wmHeight, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D gW = scaledWatermarkImg.createGraphics();
+            gW.drawImage(scaledWatermark, 0, 0, null);
+            gW.dispose();
+
+            drawX = Math.max(0, Math.min(drawX, image.getWidth() - wmWidth));
+            drawY = Math.max(0, Math.min(drawY, image.getHeight() - wmHeight));
+
+            Graphics2D g2d = image.createGraphics();
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, watermarkOpacity / 100f));
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            double rad = Math.toRadians(rotationDegrees);
+            double cx = drawX + wmWidth / 2.0;
+            double cy = drawY + wmHeight / 2.0;
+            AffineTransform old = g2d.getTransform();
+            g2d.rotate(rad, cx, cy);
+            g2d.drawImage(scaledWatermarkImg, drawX, drawY, null);
+            g2d.setTransform(old);
+            g2d.dispose();
+
+            if ("PNG".equalsIgnoreCase(outputFormat)) {
+                ImageIO.write(image, "PNG", outputFile);
+            } else {
                 ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
                 ImageWriteParam param = writer.getDefaultWriteParam();
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
