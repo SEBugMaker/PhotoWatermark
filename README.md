@@ -1,59 +1,107 @@
 # PhotoWatermark
 
-PhotoWatermark is a powerful and easy-to-use tool for adding watermarks to your photos. It supports both text and image watermarks, batch processing, and EXIF metadata extraction. The project provides a user-friendly GUI and command-line interface for flexible usage.
+PhotoWatermark 是一个功能强大且易于使用的图片批量加水印工具，支持文字水印与图片水印、批量处理、EXIF 元数据提取，以及可视化实时预览与命令行模式。最新版本新增“任意角度旋转水印”以及异步预览优化，并将默认文字水印字体大小调整为 150，方便快速生成大尺寸展示用图片。
 
-## Features
-- **Text Watermark:** Add customizable text watermarks with font, color, size (default now 150), opacity, position, shadow, stroke, and rotation options.
-- **Image Watermark:** Overlay an image watermark with adjustable scale, opacity, position, and rotation.
-- **Rotation Support:** (New) Arbitrary angle rotation (-180° to 180°) for both text and image watermarks via a rotation slider.
-- **Batch Processing:** Import multiple images and export watermarked results in bulk.
-- **EXIF Support:** Automatically extract and use photo metadata (e.g., shooting date) as watermark text.
-- **Format Conversion:** Export images as JPEG or PNG with quality settings.
-- **Custom Naming Rules:** Add prefixes/suffixes to output filenames.
-- **Graphical User Interface:** Intuitive GUI for easy operation with real-time asynchronous preview (optimized for performance).
-- **Command-Line Support:** CLI for advanced and automated workflows.
+## 功能特性
+- **文字水印**：支持字体、颜色、字号（默认 150）、透明度、位置、阴影、描边、加粗、斜体、旋转角度。
+- **图片水印**：支持缩放、透明度、九宫格/自定义位置、旋转角度。
+- **旋转支持（新）**：通过滑块对文字或图片水印进行 -180° ~ 180° 任意角度旋转，围绕水印中心旋转。
+- **异步实时预览（优化）**：预览生成在后台线程执行，滑块/参数频繁调整也能保持界面流畅。
+- **拖拽导入**：直接将文件/文件夹拖入窗口即可批量导入图片。
+- **批量处理**：一次性导出全部已导入图片的水印版本。
+- **EXIF 支持**：自动解析拍摄日期（若存在）作为默认水印文本，可自定义覆盖。
+- **文件命名规则**：支持保留原名、添加前缀、添加后缀、添加前后缀。
+- **格式与质量**：输出 JPEG（可调质量）或 PNG。
+- **自定义尺寸/缩放**：支持指定输出宽高或整体缩放（缩放优先生效）。
+- **自定义定位**：选择 `CUSTOM` 后可在预览区直接拖动水印。
+- **命令行模式**：适用于自动化或无图形环境（当前旋转仅在 GUI 中实现，CLI 可按需扩展）。
 
-## Installation
-1. Clone the repository:
+## 环境要求
+- Java 17（或兼容的更高版本）
+- 依赖库：`metadata-extractor`、`xmpcore`（已在 `lib/` 提供或通过 Maven 管理）
+
+## 安装与构建
+1. 克隆仓库：
    ```sh
    git clone https://github.com/SEBugMaker/PhotoWatermark.git
+   cd PhotoWatermark
    ```
-2. Install dependencies (metadata-extractor, xmpcore) in `lib/`.
-3. Build the project using Maven:
+2. (如使用 Maven) 构建打包：
    ```sh
    mvn clean package
    ```
-4. Run the application:
-   - GUI:
-     ```sh
-     java -jar PhotoWatermark.jar
-     ```
-   - Command-line:
-     ```sh
-     java -cp target/classes PhotoWatermarkApp
-     ```
+3. 运行（GUI）：
+   ```sh
+   java -jar PhotoWatermark.jar
+   ```
+4. 运行（命令行模式）：
+   ```sh
+   java -cp target/classes PhotoWatermarkApp
+   ```
 
-## Usage
-### GUI
-- Import images via drag-and-drop or file chooser.
-- Choose watermark mode: Text or Image.
-- (New) Adjust Rotation using the rotation slider (-180° to 180°) for both text and image watermarks.
-- Default text watermark font size is now 150 (you can change it in the input box).
-- For custom placement, choose position `CUSTOM` and drag the watermark directly in the preview pane.
-- Configure scale / width / height (scale takes precedence if > 0 and not 100%).
-- Export with selected format (JPEG/PNG) and naming rules.
+## 使用说明（GUI）
+1. 导入图片：点击“导入图片”或直接拖拽文件 / 文件夹。
+2. 选择水印类型：文字水印 / 图片水印。
+3. 设置参数：
+   - 字体、字号（默认 150）、颜色、透明度、阴影、描边、加粗、斜体。
+   - 旋转角度：使用旋转滑块（-180° ~ 180°）。
+   - 位置：九宫格或选择 `CUSTOM` 后在预览区域拖动。
+   - 输出尺寸：填写宽/高或使用缩放滑块（缩放值 != 100% 时优先生效）。
+4. 图片水印模式：选择水印图片并设置缩放、透明度、旋转及位置。
+5. 命名规则：可添加前缀/后缀（避免覆盖原图）。
+6. 选择输出格式（JPEG/PNG）与 JPEG 质量。
+7. 点击“导出图片”批量生成。
 
-### Command-Line
-- Run the app and follow prompts to set watermark options and process images.
-- (Rotation currently available in GUI workflows; CLI rotation can be added similarly if needed.)
+### 预览机制
+- 预览在后台线程生成，不阻塞界面。
+- 若正在生成上一张预览，新的参数变更会取消旧任务并启动新任务。
+- 拖动自定义位置时，坐标按目标缩放后实时映射，导出结果与预览一致。
 
-## Dependencies
-- Java 8+
-- [metadata-extractor](https://github.com/drewnoakes/metadata-extractor)
-- [xmpcore](https://github.com/adobe/XMP-Toolkit-SDK)
+## 使用说明（命令行模式）
+命令行版本支持：字体大小 / 位置 / 颜色 / 输出格式 / 批量处理 / EXIF 日期。
+当前旋转功能仅在 GUI 中，可按需扩展（可在后续版本加入 `--rotate` 参数）。
 
-## Contributing
-Contributions are welcome! Please fork the repository, create a feature branch, and submit a pull request. For major changes, open an issue first to discuss your ideas.
+运行示例：
+```sh
+java -cp target/classes PhotoWatermarkApp
+```
+根据提示输入参数即可。
 
-## License
-This project is licensed under the MIT License.
+## 常见问题 (FAQ)
+| 问题 | 说明 |
+|------|------|
+| 预览比导出慢？ | 大图首次缩放较耗时，已异步优化；可考虑后续增加“快速预览模式”。 |
+| 旋转后边缘模糊？ | 属于正常插值效果，可改用较高质量插值策略（当前默认平衡性能）。 |
+| 想保持原文件夹结构？ | 目前统一导出到选定目录（可扩展：保持相对子目录）。 |
+| CLI 想用旋转？ | 目前未暴露，后续可添加参数。 |
+
+## 目录结构（核心）
+```
+src/main/java/
+  PhotoWatermarkGUI.java   # 图形界面主程序（含异步预览、旋转、导出逻辑）
+  PhotoWatermarkApp.java   # 命令行模式入口
+lib/                       # 第三方库（如未使用 Maven）
+picture/                   # 示例图片
+README.md                  # 使用说明
+pom.xml                    # Maven 构建文件
+```
+
+## 贡献指南
+欢迎提交 Issue / PR：
+1. Fork 仓库并创建分支：`feature/xxx`。
+2. 保持提交信息英文、语义化（如 feat / fix / docs / refactor）。
+3. 提交前建议：`mvn -q package` 以确保可构建。
+
+## 许可证
+本项目基于 MIT License 开源，详见仓库根目录下的 `LICENSE` 文件。
+
+## 变更摘要（近期更新）
+| 类型 | 说明 |
+|------|------|
+| feat | 新增文字 & 图片水印旋转功能（中心旋转） |
+| perf | 预览改为后台异步 + 任务取消，显著降低卡顿 |
+| feat | 默认文字水印字号由 36 调整为 150 |
+| docs | README 翻译为中文并补充新特性 |
+
+---
+如需新增：CLI 旋转、快速预览开关、配置持久化（记住上次参数）、批量目录保持结构，请提出需求或提交 PR。
