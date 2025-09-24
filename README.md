@@ -1,71 +1,55 @@
 # PhotoWatermark
 
-这是一个Java命令行程序，用于给图片添加基于EXIF拍摄时间的水印。
+PhotoWatermark is a powerful and easy-to-use tool for adding watermarks to your photos. It supports both text and image watermarks, batch processing, and EXIF metadata extraction. The project provides a user-friendly GUI and command-line interface for flexible usage.
 
-## 功能特点
-- 从图片EXIF信息中提取拍摄时间
-- 支持自定义水印字体大小（默认36）
-- 支持自定义水印字体颜色（默认WHITE，可选：BLACK, RED, GREEN, BLUE, YELLOW）
-- 支持自定义水印位置（默认BOTTOM_RIGHT，可选：TOP_LEFT, TOP_CENTER, TOP_RIGHT, MIDDLE_LEFT, CENTER, MIDDLE_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER）
-- 支持处理单个图片或整个目录的图片
-- 自动创建输出目录并保存处理后的图片
+## Features
+- **Text Watermark:** Add customizable text watermarks with font, color, size, opacity, position, shadow, and stroke options.
+- **Image Watermark:** Overlay an image watermark with adjustable scale, opacity, and position.
+- **Batch Processing:** Import multiple images and export watermarked results in bulk.
+- **EXIF Support:** Automatically extract and use photo metadata (e.g., shooting date) as watermark text.
+- **Format Conversion:** Export images as JPEG or PNG with quality settings.
+- **Custom Naming Rules:** Add prefixes/suffixes to output filenames.
+- **Graphical User Interface:** Intuitive GUI for easy operation.
+- **Command-Line Support:** CLI for advanced and automated workflows.
 
-## 环境要求
-- JDK 17或更高版本
-- Maven 3.6或更高版本
-
-## 依赖项
-- [metadata-extractor](https://github.com/drewnoakes/metadata-extractor) - 用于读取图片的EXIF信息
-
-## 编译和运行
-
-您可以通过以下两种方式之一来编译和运行程序：
-
-### 方法一：使用Maven编译（推荐）
-
-1. 确保已安装Maven 3.6或更高版本
-2. 在项目根目录下执行以下命令：
-   ```bash
+## Installation
+1. Clone the repository:
+   ```sh
+   git clone https://github.com/SEBugMaker/PhotoWatermark.git
+   ```
+2. Install dependencies (metadata-extractor, xmpcore) in `lib/`.
+3. Build the project using Maven:
+   ```sh
    mvn clean package
    ```
-3. 编译成功后，可执行的JAR文件将位于`target`目录下
-4. 执行以下命令运行程序：
-   ```bash
-   java -jar target/PhotoWatermark-1.0-SNAPSHOT-jar-with-dependencies.jar
-   ```
+4. Run the application:
+   - GUI:
+     ```sh
+     java -jar PhotoWatermark.jar
+     ```
+   - Command-line:
+     ```sh
+     java -cp target/classes PhotoWatermarkApp
+     ```
 
-### 方法二：使用编译脚本
+## Usage
+### GUI
+- Import images via drag-and-drop or file chooser.
+- Select watermark type (text/image) and configure options.
+- Choose output folder and format.
+- Click "Export" to batch process images.
 
-如果您的系统上没有安装Maven，可以使用提供的编译脚本来构建和运行项目：
+### Command-Line
+- Run the app and follow prompts to set watermark options and process images.
 
-1. 确保脚本有执行权限：
-   ```bash
-   chmod +x compile_and_run.sh
-   ```
-2. 运行脚本：
-   ```bash
-   ./compile_and_run.sh
-   ```
-3. 脚本将自动下载必要的依赖、编译代码并提供运行选项
+## Dependencies
+- Java 8+
+- [metadata-extractor](https://github.com/drewnoakes/metadata-extractor)
+- [xmpcore](https://github.com/adobe/XMP-Toolkit-SDK)
 
-## 使用说明
-1. 运行程序后，输入图片文件的完整路径
-2. 设置水印字体大小（默认36）
-3. 设置水印字体颜色（默认WHITE，可选：BLACK, RED, GREEN, BLUE, YELLOW）
-4. 设置水印位置（默认BOTTOM_RIGHT，可选：TOP_LEFT, TOP_CENTER, TOP_RIGHT, MIDDLE_LEFT, CENTER, MIDDLE_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER）
-5. 程序将处理图片并将带水印的图片保存在原目录下的`[原文件名]_watermark`子目录中
-
-## 示例
-
-假设图片路径为`/path/to/photo.jpg`，程序将：
-1. 读取该图片的EXIF信息，提取拍摄日期
-2. 按照用户设置的参数添加水印
-3. 将处理后的图片保存为`/path/to/photo.jpg_watermark/watermarked_photo.jpg`
-
-## 注意事项
-- 如果图片没有EXIF拍摄时间信息，程序将使用当前日期作为水印
-- 程序支持常见的图片格式，如JPG、PNG等
-- 确保程序有足够的权限读取源文件和写入目标目录
+## Contributing
+Contributions are welcome! Please fork the repository, create a feature branch, and submit a pull request. For major changes, open an issue first to discuss your ideas.
 
 ## License
-MIT License
+This project is licensed under the MIT License.
+
