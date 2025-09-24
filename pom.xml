@@ -21,6 +21,12 @@
             <artifactId>metadata-extractor</artifactId>
             <version>2.18.0</version>
         </dependency>
+        <!-- JSON 序列化: 模板持久化 -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
         <!-- Java标准库已包含图片处理功能，无需额外依赖 -->
     </dependencies>
 
