@@ -71,6 +71,9 @@ public class PhotoWatermarkGUI extends JFrame {
     private JSlider imageWatermarkOpacitySlider;
     private JSlider imageWatermarkScaleSlider;
 
+    // 水印模式选择框
+    private JComboBox<String> watermarkModeComboBox;
+
     public PhotoWatermarkGUI() {
         setTitle("照片水印工具");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -288,7 +291,7 @@ public class PhotoWatermarkGUI extends JFrame {
         gbc.gridx = 0; gbc.gridy++;
         gridPanel.add(new JLabel("水印模式:"), gbc);
         gbc.gridx = 1;
-        JComboBox<String> watermarkModeComboBox = new JComboBox<>(new String[]{"文字水印", "图片水印"});
+        watermarkModeComboBox = new JComboBox<>(new String[]{"文字水印", "图片水印"});
         gridPanel.add(watermarkModeComboBox, gbc);
         gbc.gridx = 2;
         gridPanel.add(new JLabel(""), gbc);
@@ -705,18 +708,7 @@ public class PhotoWatermarkGUI extends JFrame {
         int height = parseInt(heightField.getText());
         double scale = scaleSlider.getValue() / 100.0;
 
-        // 根据水印模式选择分支
-        boolean isTextWatermark = true;
-        JComboBox<String> watermarkModeComboBox = null;
-        for (Component comp : ((Container) namingRuleComboBox.getParent()).getComponents()) {
-            if (comp instanceof JComboBox && ((JComboBox<?>) comp).getItemCount() == 2) {
-                watermarkModeComboBox = (JComboBox<String>) comp;
-                break;
-            }
-        }
-        if (watermarkModeComboBox != null) {
-            isTextWatermark = watermarkModeComboBox.getSelectedIndex() == 0;
-        }
+        boolean isTextWatermark = watermarkModeComboBox.getSelectedIndex() == 0;
 
         if (isTextWatermark) {
             int fontSize = parseInt(fontSizeField.getText());
@@ -742,6 +734,8 @@ public class PhotoWatermarkGUI extends JFrame {
                 outName += ext;
                 File outFile = new File(outputFolder, outName);
                 PhotoWatermarkApp.processImageGUI(file, outFile, fontSize, selectedColor, positionStr, format, jpegQuality, width, height, scale, watermarkText, fontName, opacity, shadow, stroke, bold, italic);
+
+                //PhotoWatermarkApp.processImageGUI(file, outFile, fontSize, selectedColor.toString(), positionStr, format, jpegQuality, width, height, scale);
             }
         } else {
             if (watermarkImageFile == null) {
