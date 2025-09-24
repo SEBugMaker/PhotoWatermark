@@ -5,12 +5,16 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.dnd.*;
 import java.awt.event.ItemEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Iterator;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -86,6 +90,10 @@ public class PhotoWatermarkGUI extends JFrame {
     // Preview worker for async rendering
     private volatile SwingWorker<PreviewResult, Void> previewWorker;
     private volatile int previewTaskSeq = 0;
+
+    // 模板管理相关
+    private JComboBox<WatermarkTemplate> templateComboBox; // 模板下拉
+    private List<WatermarkTemplate> templates = new ArrayList<>(); // 模板列表
 
     // Result holder for preview generation
     private static class PreviewResult {
@@ -322,6 +330,68 @@ public class PhotoWatermarkGUI extends JFrame {
         // 调整窗口大小并居中显示
         pack();
         setLocationRelativeTo(null);
+
+        // 加载模板并刷新下拉（在 UI 构建后）
+        templates = TemplateManager.loadTemplates();
+        refreshTemplateComboBox();
+        // 启动时尝试加载上次会话或应用默认模板
+        loadLastSessionOrDefault();
+        // 关闭前保存当前会话
+        addWindowListener(new WindowAdapter() {
+            @Override public void windowClosing(WindowEvent e) { saveLastSession(); }
+        });
+    }
+
+    // 加载上次会话或默认模板
+    private void loadLastSessionOrDefault() {
+        LastSession s = LastSessionManager.load();
+        if (s != null) {
+            // 优先用 lastTemplateId 找模板
+            if (s.lastTemplateId != null) {
+                WatermarkTemplate match = null;
+                for (WatermarkTemplate t : templates) {
+                    if (s.lastTemplateId.equals(t.id)) { match = t; break; }
+                }
+                if (match != null) {
+                    templateComboBox.setSelectedItem(match);
+                    applyTemplateToUI(match);
+                    return;
+                }
+            }
+            // 回退到快照
+            if (s.lastSettings != null) {
+                applyTemplateToUI(s.lastSettings);
+            }
+        } else {
+            // 没有会话文件：若有模板则默认应用第一个
+            if (!templates.isEmpty()) {
+                templateComboBox.setSelectedIndex(0);
+                applyTemplateToUI(templates.get(0));
+            }
+        }
+    }
+
+    // 保存当前会话
+    private void saveLastSession() {
+        try {
+            LastSession session = new LastSession();
+            WatermarkTemplate selected = (WatermarkTemplate) templateComboBox.getSelectedItem();
+            if (selected != null) session.lastTemplateId = selected.id; else session.lastTemplateId = null;
+            session.lastSettings = snapshotCurrentSettings();
+            session.savedAt = System.currentTimeMillis();
+            LastSessionManager.save(session);
+        } catch (Exception ignore) { }
+    }
+
+    // 快照当前 UI 设置（不持久化 id 与时间）
+    private WatermarkTemplate snapshotCurrentSettings() {
+        WatermarkTemplate t = new WatermarkTemplate();
+        t.id = null; // 会话快照不需要 id
+        t.name = "__LAST_SESSION__";
+        t.description = "自动保存的上次会话设置";
+        t.createdAt = t.updatedAt = System.currentTimeMillis();
+        buildTemplateFromUI(t);
+        return t;
     }
 
     // 预览区刷新方法：绘制水印（支持九宫格位置与图片水印）
@@ -977,40 +1047,237 @@ public class PhotoWatermarkGUI extends JFrame {
         exportPanel.add(exportButton);
         rightPanel.add(exportPanel, BorderLayout.SOUTH);
 
-        // 导入进度条
+        // 模板管理面板 (置于顶部north容器)
+        JPanel northContainer = new JPanel();
+        northContainer.setLayout(new BoxLayout(northContainer, BoxLayout.Y_AXIS));
+        northContainer.setBackground(Color.WHITE);
+        // 进度条放最上
         progressBar = new JProgressBar();
         progressBar.setVisible(false);
-        rightPanel.add(progressBar, BorderLayout.NORTH);
+        northContainer.add(progressBar);
+        JPanel templatePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        templatePanel.setBackground(Color.WHITE);
+        templatePanel.setBorder(BorderFactory.createTitledBorder("模板管理"));
+        templateComboBox = new JComboBox<>();
+        templateComboBox.setPreferredSize(new Dimension(160, 28));
+        JButton applyTemplateBtn = new JButton("应用模板");
+        JButton saveTemplateBtn = new JButton("保存模板");
+        JButton deleteTemplateBtn = new JButton("删除模板");
+        applyTemplateBtn.addActionListener(e -> {
+            WatermarkTemplate t = (WatermarkTemplate) templateComboBox.getSelectedItem();
+            if (t != null) {
+                applyTemplateToUI(t);
+            } else {
+                JOptionPane.showMessageDialog(this, "没有选择模板", "提示", JOptionPane.INFORMATION_MESSAGE);
+            }
+        });
+        saveTemplateBtn.addActionListener(e -> saveTemplateFlow());
+        deleteTemplateBtn.addActionListener(e -> deleteTemplateFlow());
+        templatePanel.add(templateComboBox);
+        templatePanel.add(applyTemplateBtn);
+        templatePanel.add(saveTemplateBtn);
+        templatePanel.add(deleteTemplateBtn);
+        northContainer.add(templatePanel);
+        rightPanel.add(northContainer, BorderLayout.NORTH);
 
         return rightPanel;
     }
-    
-    // 创建图片列表面板
+
+    // 重新加入：左侧图片列表面板创建方法（之前在编辑中被移除）
     private JPanel createImageListPanel() {
         JPanel listPanel = new JPanel(new BorderLayout());
         listPanel.setBorder(BorderFactory.createTitledBorder("已导入图片列表"));
-        // 宽度在构造函数中统一设置为固定值
-        // listPanel.setPreferredSize(new Dimension(350, 200));
-
         JScrollPane listScrollPane = new JScrollPane(imageList);
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         listPanel.add(listScrollPane, BorderLayout.CENTER);
-        
-        // 添加删除按钮
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton removeButton = new JButton("删除选中");
         removeButton.addActionListener(e -> removeSelectedImages());
         buttonPanel.add(removeButton);
-        
         JButton clearButton = new JButton("清空列表");
         clearButton.addActionListener(e -> clearAllImages());
         buttonPanel.add(clearButton);
-        
         listPanel.add(buttonPanel, BorderLayout.SOUTH);
-        
         return listPanel;
     }
-    
+
+    private void saveTemplateFlow() {
+        String name = JOptionPane.showInputDialog(this, "输入模板名称", "保存模板", JOptionPane.PLAIN_MESSAGE);
+        if (name == null) return; // 取消
+        name = name.trim();
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "名称不能为空");
+            return;
+        }
+        // 查找是否重名
+        WatermarkTemplate existing = null;
+        for (WatermarkTemplate t : templates) {
+            if (name.equals(t.name)) { existing = t; break; }
+        }
+        if (existing != null) {
+            int ans = JOptionPane.showConfirmDialog(this, "已存在同名模板，是否覆盖?", "确认", JOptionPane.YES_NO_OPTION);
+            if (ans != JOptionPane.YES_OPTION) return;
+            buildTemplateFromUI(existing); // 覆盖内容
+            existing.updatedAt = System.currentTimeMillis();
+        } else {
+            WatermarkTemplate t = new WatermarkTemplate();
+            t.id = UUID.randomUUID().toString();
+            t.name = name;
+            t.description = ""; // 可后续扩展
+            t.createdAt = System.currentTimeMillis();
+            t.updatedAt = t.createdAt;
+            buildTemplateFromUI(t);
+            templates.add(t);
+        }
+        if (TemplateManager.saveTemplates(templates)) {
+            refreshTemplateComboBox();
+            JOptionPane.showMessageDialog(this, "模板保存成功");
+        } else {
+            JOptionPane.showMessageDialog(this, "模板保存失败", "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void deleteTemplateFlow() {
+        WatermarkTemplate t = (WatermarkTemplate) templateComboBox.getSelectedItem();
+        if (t == null) {
+            JOptionPane.showMessageDialog(this, "请选择要删除的模板");
+            return;
+        }
+        int ans = JOptionPane.showConfirmDialog(this, "确认删除模板: " + t.name + "?", "删除确认", JOptionPane.YES_NO_OPTION);
+        if (ans != JOptionPane.YES_OPTION) return;
+        for (Iterator<WatermarkTemplate> it = templates.iterator(); it.hasNext();) {
+            WatermarkTemplate w = it.next();
+            if (w.id != null && w.id.equals(t.id)) { it.remove(); break; }
+        }
+        if (TemplateManager.saveTemplates(templates)) {
+            refreshTemplateComboBox();
+        } else {
+            JOptionPane.showMessageDialog(this, "删除后保存失败", "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void refreshTemplateComboBox() {
+        if (templateComboBox == null) return;
+        templateComboBox.removeAllItems();
+        templates.sort((a,b) -> a.name == null ? 1 : b.name == null ? -1 : a.name.compareToIgnoreCase(b.name));
+        for (WatermarkTemplate t : templates) templateComboBox.addItem(t);
+    }
+
+    private void buildTemplateFromUI(WatermarkTemplate t) {
+        // 通用 / 导出参数
+        t.namingRule = (String) namingRuleComboBox.getSelectedItem();
+        t.prefix = prefixField.getText();
+        t.suffix = suffixField.getText();
+        t.outputFormat = (String) formatComboBox.getSelectedItem();
+        t.jpegQuality = jpegQualitySlider.getValue();
+        t.targetWidth = parseInt(widthField.getText());
+        t.targetHeight = parseInt(heightField.getText());
+        t.scalePercent = scaleSlider.getValue();
+        t.position = (String) positionComboBox.getSelectedItem();
+        t.rotationDegrees = rotationSlider != null ? rotationSlider.getValue() : 0;
+        if ("CUSTOM".equals(t.position)) {
+            t.customX = customX;
+            t.customY = customY;
+        } else {
+            t.customX = null; t.customY = null;
+        }
+        // 模式
+        boolean isText = watermarkModeComboBox.getSelectedIndex() == 0;
+        t.mode = isText ? "TEXT" : "IMAGE";
+        if (isText) {
+            t.text = watermarkTextField.getText();
+            t.fontName = (String) fontComboBox.getSelectedItem();
+            t.fontSize = parseInt(fontSizeField.getText());
+            t.bold = boldCheckBox.isSelected();
+            t.italic = italicCheckBox.isSelected();
+            t.color = colorToHex(selectedColor);
+            t.textOpacity = opacitySlider.getValue();
+            t.shadow = shadowCheckBox.isSelected();
+            t.stroke = strokeCheckBox.isSelected();
+            // 清理图片字段
+            t.watermarkImagePath = null;
+            t.watermarkScale = 0.5;
+            t.watermarkOpacity = 80;
+        } else {
+            t.watermarkImagePath = watermarkImageFile != null ? watermarkImageFile.getAbsolutePath() : null;
+            t.watermarkScale = imageWatermarkScaleSlider.getValue() / 100.0;
+            t.watermarkOpacity = imageWatermarkOpacitySlider.getValue();
+            // 清理文本字段
+            t.text = watermarkTextField.getText(); // 仍保留文本以便模式切换时展示原文本
+            t.fontName = (String) fontComboBox.getSelectedItem();
+            t.fontSize = parseInt(fontSizeField.getText());
+            t.bold = boldCheckBox.isSelected();
+            t.italic = italicCheckBox.isSelected();
+            t.color = colorToHex(selectedColor);
+            t.textOpacity = opacitySlider.getValue();
+            t.shadow = shadowCheckBox.isSelected();
+            t.stroke = strokeCheckBox.isSelected();
+        }
+    }
+
+    private void applyTemplateToUI(WatermarkTemplate t) {
+        if (t == null) return;
+        namingRuleComboBox.setSelectedItem(t.namingRule);
+        prefixField.setText(t.prefix != null ? t.prefix : "");
+        suffixField.setText(t.suffix != null ? t.suffix : "");
+        formatComboBox.setSelectedItem(t.outputFormat != null ? t.outputFormat : "JPEG");
+        jpegQualitySlider.setValue(t.jpegQuality > 0 ? t.jpegQuality : 90);
+        widthField.setText(String.valueOf(t.targetWidth));
+        heightField.setText(String.valueOf(t.targetHeight));
+        scaleSlider.setValue(t.scalePercent > 0 ? t.scalePercent : 100);
+        positionComboBox.setSelectedItem(t.position != null ? t.position : "CENTER");
+        if (rotationSlider != null) rotationSlider.setValue((int)Math.round(t.rotationDegrees));
+        if ("CUSTOM".equals(t.position)) {
+            customX = t.customX != null ? t.customX : 0;
+            customY = t.customY != null ? t.customY : 0;
+        }
+        // 模式
+        if ("IMAGE".equalsIgnoreCase(t.mode)) {
+            watermarkModeComboBox.setSelectedIndex(1);
+        } else {
+            watermarkModeComboBox.setSelectedIndex(0);
+        }
+        // 文本参数
+        if (t.text != null) watermarkTextField.setText(t.text);
+        if (t.fontName != null) fontComboBox.setSelectedItem(t.fontName);
+        fontSizeField.setText(String.valueOf(t.fontSize > 0 ? t.fontSize : 150));
+        boldCheckBox.setSelected(t.bold);
+        italicCheckBox.setSelected(t.italic);
+        if (t.color != null) {
+            try { selectedColor = parseHexColor(t.color); } catch (Exception ignore) {}
+            colorPanel.repaint();
+        }
+        if (t.textOpacity >= 0 && t.textOpacity <= 100) opacitySlider.setValue(t.textOpacity);
+        shadowCheckBox.setSelected(t.shadow);
+        strokeCheckBox.setSelected(t.stroke);
+        // 图片参数
+        if (t.watermarkImagePath != null && !t.watermarkImagePath.isEmpty()) {
+            File f = new File(t.watermarkImagePath);
+            if (f.exists()) {
+                watermarkImageFile = f;
+                try { watermarkImageBuffered = ImageIO.read(f); } catch (IOException ex) { watermarkImageBuffered = null; }
+                watermarkImagePathLabel.setText(f.getName());
+                watermarkImagePathLabel.setToolTipText(f.getAbsolutePath());
+            }
+        }
+        if (t.watermarkScale > 0) imageWatermarkScaleSlider.setValue((int)Math.round(t.watermarkScale * 100));
+        if (t.watermarkOpacity >= 0 && t.watermarkOpacity <= 100) imageWatermarkOpacitySlider.setValue(t.watermarkOpacity);
+        updatePreview();
+    }
+
+    private String colorToHex(Color c) { return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue()); }
+    private Color parseHexColor(String hex) {
+        String h = hex.trim();
+        if (h.startsWith("#")) h = h.substring(1);
+        if (h.length() == 6) {
+            int r = Integer.parseInt(h.substring(0,2),16);
+            int g = Integer.parseInt(h.substring(2,4),16);
+            int b = Integer.parseInt(h.substring(4,6),16);
+            return new Color(r,g,b);
+        }
+        throw new IllegalArgumentException("Bad hex color: " + hex);
+    }
+
     // 删除选中的图片
     private void removeSelectedImages() {
         int[] selectedIndices = imageList.getSelectedIndices();
