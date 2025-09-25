@@ -38,8 +38,24 @@ public class PhotoWatermarkGUI extends JFrame {
         }
     }
 
-    private DefaultListModel<ImageIcon> imageListModel;
-    private JList<ImageIcon> imageList;
+    // 图片列表项数据结构，包含文件、缩略图和选中状态
+    private static class ImageEntry {
+        File file;
+        ImageIcon thumbnail;
+        boolean selected;
+        ImageEntry(File file, ImageIcon thumbnail, boolean selected) {
+            this.file = file;
+            this.thumbnail = thumbnail;
+            this.selected = selected;
+        }
+        @Override
+        public String toString() {
+            return file.getName();
+        }
+    }
+
+    private DefaultListModel<ImageEntry> imageListModel;
+    private JList<ImageEntry> imageList;
     private JTextField outputFolderField;
     private File outputFolder;
     private List<File> importedFiles = new ArrayList<>();
@@ -106,7 +122,8 @@ public class PhotoWatermarkGUI extends JFrame {
 
     public PhotoWatermarkGUI() {
         setTitle("照片水印工具");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // 从直接退出改为自定义处理
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setPreferredSize(new Dimension(1200, 700)); // 扩展宽度以适应三列
 
         // 初始化图片列表模型与组件（在使用前）
@@ -115,6 +132,25 @@ public class PhotoWatermarkGUI extends JFrame {
         imageList.setCellRenderer(new ImageListCellRenderer());
         imageList.setFixedCellWidth(THUMB_WIDTH + 20);
         imageList.setFixedCellHeight(THUMB_HEIGHT + 30);
+        // 点击复选框区域切换选中状态
+        imageList.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                int index = imageList.locationToIndex(e.getPoint());
+                if (index >= 0) {
+                    Rectangle cell = imageList.getCellBounds(index, index);
+                    if (cell != null) {
+                        // 约定复选框位于项左侧约24px宽的区域
+                        if (e.getX() - cell.x <= 24) {
+                            ImageEntry entry = imageListModel.get(index);
+                            entry.selected = !entry.selected;
+                            imageList.repaint(cell);
+                            updateStatusLabel();
+                        }
+                    }
+                }
+            }
+        });
 
         // 主Panel采用BoxLayout横向三列
         JPanel mainPanel = new JPanel();
@@ -123,7 +159,7 @@ public class PhotoWatermarkGUI extends JFrame {
         // 左侧图片列表
         JPanel listPanel = createImageListPanel();
         // 固定左侧列表区宽度：略大于缩略图宽度
-        int listWidth = THUMB_WIDTH + 60; // 略大于缩略图（从+40调整为+60）
+        int listWidth = THUMB_WIDTH + 140; // 扩宽以容纳按钮面板
         listPanel.setPreferredSize(new Dimension(listWidth, 700));
         listPanel.setMinimumSize(new Dimension(listWidth, 0));
         listPanel.setMaximumSize(new Dimension(listWidth, Integer.MAX_VALUE));
@@ -264,11 +300,10 @@ public class PhotoWatermarkGUI extends JFrame {
         // 图片列表点击事件：刷新预览区
         imageList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                int selectedIndex = imageList.getSelectedIndex();
-                if (selectedIndex != -1 && selectedIndex < importedFiles.size()) {
-                    File selectedFile = importedFiles.get(selectedIndex);
+                ImageEntry entry = imageList.getSelectedValue();
+                if (entry != null && entry.file != null) {
                     try {
-                        originalImage = ImageIO.read(selectedFile);
+                        originalImage = ImageIO.read(entry.file);
                         updatePreview();
                         if (originalImage != null) {
                             selectedImageSizeLabel.setText(String.format("选中尺寸: %d x %d", originalImage.getWidth(), originalImage.getHeight()));
@@ -336,9 +371,9 @@ public class PhotoWatermarkGUI extends JFrame {
         refreshTemplateComboBox();
         // 启动时尝试加载上次会话或应用默认模板
         loadLastSessionOrDefault();
-        // 关闭前保存当前会话
+        // 关闭前进行检查与交互
         addWindowListener(new WindowAdapter() {
-            @Override public void windowClosing(WindowEvent e) { saveLastSession(); }
+            @Override public void windowClosing(WindowEvent e) { handleCloseRequest(); }
         });
     }
 
@@ -361,15 +396,59 @@ public class PhotoWatermarkGUI extends JFrame {
             // 回退到快照
             if (s.lastSettings != null) {
                 applyTemplateToUI(s.lastSettings);
-            }
-        } else {
-            // 没有会话文件：若有模板则默认应用第一个
-            if (!templates.isEmpty()) {
-                templateComboBox.setSelectedIndex(0);
-                applyTemplateToUI(templates.get(0));
+                return;
             }
         }
+        // 没有会话文件或会话不可用：使用默认模板
+        if (templates.isEmpty()) {
+            WatermarkTemplate def = createDefaultTemplate();
+            templates.add(def);
+            TemplateManager.saveTemplates(templates);
+            refreshTemplateComboBox();
+            templateComboBox.setSelectedItem(def);
+            applyTemplateToUI(def);
+        } else {
+            templateComboBox.setSelectedIndex(0);
+            applyTemplateToUI(templates.get(0));
+        }
     }
+
+    // 内置默认模板（当无会话且无模板时使用）
+    private WatermarkTemplate createDefaultTemplate() {
+        WatermarkTemplate t = new WatermarkTemplate();
+        t.id = java.util.UUID.randomUUID().toString();
+        t.name = "默认模板";
+        t.description = "内置默认模板";
+        t.createdAt = System.currentTimeMillis();
+        t.updatedAt = t.createdAt;
+        t.mode = "TEXT";
+        t.position = "CENTER";
+        t.customX = null;
+        t.customY = null;
+        t.rotationDegrees = 0;
+        t.targetWidth = 0;
+        t.targetHeight = 0;
+        t.scalePercent = 100;
+        t.namingRule = "保留原文件名";
+        t.prefix = "wm_";
+        t.suffix = "_watermarked";
+        t.outputFormat = "JPEG";
+        t.jpegQuality = 90;
+        t.text = "© 2025 by YourName";
+        t.fontName = "系统字体";
+        t.fontSize = 150;
+        t.bold = false;
+        t.italic = false;
+        t.color = "#000000";
+        t.textOpacity = 100;
+        t.shadow = false;
+        t.stroke = false;
+        t.watermarkImagePath = null;
+        t.watermarkScale = 0.5;
+        t.watermarkOpacity = 80;
+        return t;
+    }
+
 
     // 保存当前会话
     private void saveLastSession() {
@@ -1083,19 +1162,39 @@ public class PhotoWatermarkGUI extends JFrame {
         return rightPanel;
     }
 
-    // 重新加入：左侧图片列表面板创建方法（之前在编辑中被移除）
+    // 重新加入：左侧图片列表面板创建方法（增加 全部选中 / 取消已选 按钮）
     private JPanel createImageListPanel() {
         JPanel listPanel = new JPanel(new BorderLayout());
         listPanel.setBorder(BorderFactory.createTitledBorder("已导入图片列表"));
         JScrollPane listScrollPane = new JScrollPane(imageList);
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         listPanel.add(listScrollPane, BorderLayout.CENTER);
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        // 使用 2x2 网格布局，避免单行按钮被截断
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 2, 6, 6));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+        JButton selectAllBtn = new JButton("全部选中");
+        selectAllBtn.addActionListener(e -> {
+            for (int i = 0; i < imageListModel.size(); i++) {
+                imageListModel.get(i).selected = true;
+            }
+            imageList.repaint();
+            updateStatusLabel();
+        });
+        JButton clearSelectionBtn = new JButton("取消已选");
+        clearSelectionBtn.addActionListener(e -> {
+            for (int i = 0; i < imageListModel.size(); i++) {
+                imageListModel.get(i).selected = false;
+            }
+            imageList.repaint();
+            updateStatusLabel();
+        });
         JButton removeButton = new JButton("删除选中");
         removeButton.addActionListener(e -> removeSelectedImages());
-        buttonPanel.add(removeButton);
         JButton clearButton = new JButton("清空列表");
         clearButton.addActionListener(e -> clearAllImages());
+        buttonPanel.add(selectAllBtn);
+        buttonPanel.add(clearSelectionBtn);
+        buttonPanel.add(removeButton);
         buttonPanel.add(clearButton);
         listPanel.add(buttonPanel, BorderLayout.SOUTH);
         return listPanel;
@@ -1114,11 +1213,13 @@ public class PhotoWatermarkGUI extends JFrame {
         for (WatermarkTemplate t : templates) {
             if (name.equals(t.name)) { existing = t; break; }
         }
+        WatermarkTemplate toSelect;
         if (existing != null) {
             int ans = JOptionPane.showConfirmDialog(this, "已存在同名模板，是否覆盖?", "确认", JOptionPane.YES_NO_OPTION);
             if (ans != JOptionPane.YES_OPTION) return;
             buildTemplateFromUI(existing); // 覆盖内容
             existing.updatedAt = System.currentTimeMillis();
+            toSelect = existing;
         } else {
             WatermarkTemplate t = new WatermarkTemplate();
             t.id = UUID.randomUUID().toString();
@@ -1128,9 +1229,14 @@ public class PhotoWatermarkGUI extends JFrame {
             t.updatedAt = t.createdAt;
             buildTemplateFromUI(t);
             templates.add(t);
+            toSelect = t;
         }
         if (TemplateManager.saveTemplates(templates)) {
             refreshTemplateComboBox();
+            // 关键：保存后保持选择为刚保存/更新的模板
+            if (toSelect != null) templateComboBox.setSelectedItem(toSelect);
+            // 立即保存会话，确保下次启动使用刚保存/更新的模板
+            saveLastSession();
             JOptionPane.showMessageDialog(this, "模板保存成功");
         } else {
             JOptionPane.showMessageDialog(this, "模板保存失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -1280,14 +1386,23 @@ public class PhotoWatermarkGUI extends JFrame {
 
     // 删除选中的图片
     private void removeSelectedImages() {
-        int[] selectedIndices = imageList.getSelectedIndices();
-        // 从后往前删除，避免索引变化问题
-        for (int i = selectedIndices.length - 1; i >= 0; i--) {
-            int index = selectedIndices[i];
-            imageListModel.removeElementAt(index);
-            importedFiles.remove(index);
+        java.util.List<ImageEntry> toRemove = new java.util.ArrayList<>();
+        for (int i = 0; i < imageListModel.size(); i++) {
+            ImageEntry entry = imageListModel.get(i);
+            if (entry.selected) toRemove.add(entry);
+        }
+        if (toRemove.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请先勾选要删除的图片！");
+            return;
+        }
+        for (ImageEntry entry : toRemove) {
+            imageListModel.removeElement(entry);
+            if (entry.file != null) importedFiles.remove(entry.file);
         }
         updateStatusLabel();
+        if (imageListModel.isEmpty()) {
+            selectedImageSizeLabel.setText("选中尺寸: N/A");
+        }
     }
     
     // 清空所有图片
@@ -1299,9 +1414,14 @@ public class PhotoWatermarkGUI extends JFrame {
         selectedImageSizeLabel.setText("选中尺寸: N/A");
     }
     
-    // 更新状态标签
+    // 更新状态标签：显示导入总数与已勾选数量
     private void updateStatusLabel() {
-        statusLabel.setText(String.format("已导入: %d 张图片", importedFiles.size()));
+        int total = importedFiles.size();
+        int selected = 0;
+        for (int i = 0; i < imageListModel.size(); i++) {
+            if (imageListModel.get(i).selected) selected++;
+        }
+        statusLabel.setText(String.format("已导入: %d 张图片，已选中: %d", total, selected));
     }
 
     private void openFileChooser() {
@@ -1367,7 +1487,7 @@ public class PhotoWatermarkGUI extends JFrame {
         return javax.imageio.ImageIO.read(file);
     }
 
-    // 修改后的addImage方法，支持tiff/bmp缩略图
+    // 修改后的addImage方法，支持tiff/bmp缩略图，并加入选中状态
     private void addImage(File file) {
         try {
             BufferedImage original = readFirstImage(file);
@@ -1386,7 +1506,7 @@ public class PhotoWatermarkGUI extends JFrame {
             g.dispose();
             ImageIcon icon = new ImageIcon(thumb);
             icon.setDescription(file.getName());
-            imageListModel.addElement(icon);
+            imageListModel.addElement(new ImageEntry(file, icon, true));
         } catch (Exception ex) {
             // 回退旧方案
             try {
@@ -1394,25 +1514,43 @@ public class PhotoWatermarkGUI extends JFrame {
                 Image img = icon.getImage().getScaledInstance(THUMB_WIDTH, THUMB_HEIGHT, Image.SCALE_SMOOTH);
                 icon = new ImageIcon(img);
                 icon.setDescription(file.getName());
-                imageListModel.addElement(icon);
+                imageListModel.addElement(new ImageEntry(file, icon, true));
             } catch (Exception ignore) {
                 JOptionPane.showMessageDialog(this, "无法加载图片: " + file.getName(), "错误", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
 
-    // 自定义渲染器
-    private static class ImageListCellRenderer extends JLabel implements ListCellRenderer<ImageIcon> {
+    // 自定义渲染器：显示复选框 + 缩略图 + 文件名
+    private static class ImageListCellRenderer implements ListCellRenderer<ImageEntry> {
+        private final JPanel panel = new JPanel(new BorderLayout(5, 0));
+        private final JCheckBox checkBox = new JCheckBox();
+        private final JLabel label = new JLabel();
+        ImageListCellRenderer() {
+            panel.setOpaque(true);
+            checkBox.setOpaque(false);
+            label.setHorizontalTextPosition(JLabel.CENTER);
+            label.setVerticalTextPosition(JLabel.BOTTOM);
+            JPanel center = new JPanel(new BorderLayout());
+            center.setOpaque(false);
+            center.add(label, BorderLayout.CENTER);
+            panel.add(checkBox, BorderLayout.WEST);
+            panel.add(center, BorderLayout.CENTER);
+            panel.setPreferredSize(new Dimension(THUMB_WIDTH + 40, THUMB_HEIGHT + 30));
+        }
         @Override
-        public Component getListCellRendererComponent(JList<? extends ImageIcon> list, ImageIcon value, int index, boolean isSelected, boolean cellHasFocus) {
-            setIcon(value);
-            setText(value.getDescription());
-            setHorizontalTextPosition(JLabel.CENTER);
-            setVerticalTextPosition(JLabel.BOTTOM);
-            setPreferredSize(new Dimension(100, 120));
-            setOpaque(true);
-            setBackground(isSelected ? Color.LIGHT_GRAY : Color.WHITE);
-            return this;
+        public Component getListCellRendererComponent(JList<? extends ImageEntry> list, ImageEntry value, int index, boolean isSelected, boolean cellHasFocus) {
+            if (value != null) {
+                checkBox.setSelected(value.selected);
+                label.setIcon(value.thumbnail);
+                label.setText(value.file != null ? value.file.getName() : "");
+            } else {
+                checkBox.setSelected(false);
+                label.setIcon(null);
+                label.setText("");
+            }
+            panel.setBackground(isSelected ? new Color(230,230,230) : Color.WHITE);
+            return panel;
         }
     }
 
@@ -1453,7 +1591,16 @@ public class PhotoWatermarkGUI extends JFrame {
             JOptionPane.showMessageDialog(this, "请先选择输出文件夹！");
             return;
         }
-        for (File file : importedFiles) {
+        java.util.List<File> selectedFiles = new java.util.ArrayList<>();
+        for (int i = 0; i < imageListModel.size(); i++) {
+            ImageEntry entry = imageListModel.get(i);
+            if (entry.selected) selectedFiles.add(entry.file);
+        }
+        if (selectedFiles.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请先勾选要导出的图片！");
+            return;
+        }
+        for (File file : selectedFiles) {
             if (file.getParentFile().equals(outputFolder)) {
                 JOptionPane.showMessageDialog(this, "禁止导出到原文件夹: " + file.getParent());
                 return;
@@ -1480,7 +1627,7 @@ public class PhotoWatermarkGUI extends JFrame {
             boolean shadow = shadowCheckBox.isSelected();
             boolean stroke = strokeCheckBox.isSelected();
 
-            for (File file : importedFiles) {
+            for (File file : selectedFiles) {
                 String baseName = file.getName();
                 String nameNoExt = baseName.contains(".") ? baseName.substring(0, baseName.lastIndexOf('.')) : baseName;
                 String ext = format.equals("PNG") ? ".png" : ".jpg";
@@ -1510,7 +1657,7 @@ public class PhotoWatermarkGUI extends JFrame {
             double watermarkScale = imageWatermarkScaleSlider.getValue() / 100.0;
             int watermarkOpacity = imageWatermarkOpacitySlider.getValue();
 
-            for (File file : importedFiles) {
+            for (File file : selectedFiles) {
                 String baseName = file.getName();
                 String nameNoExt = baseName.contains(".") ? baseName.substring(0, baseName.lastIndexOf('.')) : baseName;
                 String ext = format.equals("PNG") ? ".png" : ".jpg";
@@ -1558,5 +1705,130 @@ public class PhotoWatermarkGUI extends JFrame {
                name.endsWith(".png") || name.endsWith(".gif") || 
                name.endsWith(".bmp") || name.endsWith(".tif") || 
                name.endsWith(".tiff");
+    }
+
+    // 关闭处理：检查当前参数是否属于已保存模板；否则提示保存
+    private void handleCloseRequest() {
+        try {
+            WatermarkTemplate current = snapshotCurrentSettings();
+            boolean matches = false;
+            if (templates != null) {
+                for (WatermarkTemplate t : templates) {
+                    if (sameSettings(current, t)) { matches = true; break; }
+                }
+            }
+            if (matches) {
+                // 已有模板匹配：保存会话并退出
+                saveLastSession();
+                dispose();
+                System.exit(0);
+                return;
+            }
+            String message = "当前参数尚未保存为模板。\n是否保存为模板以便下次恢复？\n选择\"不保存\"，下次打开将不会恢复这些参数。";
+            Object[] options = {"保存为模板并退出", "直接退出不保存", "取消"};
+            int choice = JOptionPane.showOptionDialog(this, message, "保存模板提示",
+                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
+                    null, options, options[0]);
+            if (choice == JOptionPane.CANCEL_OPTION || choice == -1) {
+                return; // 取消关闭
+            } else if (choice == JOptionPane.YES_OPTION) {
+                boolean saved = promptSaveTemplateForClose();
+                if (!saved) return; // 保存失败或取消
+                saveLastSession();
+                dispose();
+                System.exit(0);
+            } else if (choice == JOptionPane.NO_OPTION) {
+                // 不保存模板，且不保留上次会话
+                try {
+                    File f = LastSessionManager.getLastSessionFile();
+                    if (f != null && f.exists()) f.delete();
+                } catch (Exception ignore) {}
+                dispose();
+                System.exit(0);
+            }
+        } catch (Exception ex) {
+            // 异常兜底：不保留会话直接退出
+            try {
+                File f = LastSessionManager.getLastSessionFile();
+                if (f != null && f.exists()) f.delete();
+            } catch (Exception ignore) {}
+            dispose();
+            System.exit(0);
+        }
+    }
+
+    // 比较两个模板是否在参数上等价（忽略id/名称/时间等元数据）
+    private boolean sameSettings(WatermarkTemplate a, WatermarkTemplate b) {
+        if (a == null || b == null) return false;
+        if (!eq(a.mode, b.mode)) return false;
+        if (!eq(a.position, b.position)) return false;
+        if (!objEq(a.customX, b.customX)) return false;
+        if (!objEq(a.customY, b.customY)) return false;
+        if (!eq(a.namingRule, b.namingRule)) return false;
+        if (!eq(a.prefix, b.prefix)) return false;
+        if (!eq(a.suffix, b.suffix)) return false;
+        if (!eq(a.outputFormat, b.outputFormat)) return false;
+        if (a.jpegQuality != b.jpegQuality) return false;
+        if (a.targetWidth != b.targetWidth) return false;
+        if (a.targetHeight != b.targetHeight) return false;
+        if (a.scalePercent != b.scalePercent) return false;
+        if (!eq(a.text, b.text)) return false;
+        if (!eq(a.fontName, b.fontName)) return false;
+        if (a.fontSize != b.fontSize) return false;
+        if (a.bold != b.bold) return false;
+        if (a.italic != b.italic) return false;
+        if (!eq(a.color, b.color)) return false;
+        if (a.textOpacity != b.textOpacity) return false;
+        if (a.shadow != b.shadow) return false;
+        if (a.stroke != b.stroke) return false;
+        if (!eq(a.watermarkImagePath, b.watermarkImagePath)) return false;
+        if (!approx(a.watermarkScale, b.watermarkScale, 1e-6)) return false;
+        if (a.watermarkOpacity != b.watermarkOpacity) return false;
+        if (!approx(a.rotationDegrees, b.rotationDegrees, 1e-6)) return false;
+        return true;
+    }
+    private boolean eq(String x, String y) { return x == null ? y == null : x.equals(y); }
+    private boolean objEq(Integer x, Integer y) { return x == null ? y == null : x.equals(y); }
+    private boolean approx(double x, double y, double eps) { return Math.abs(x - y) <= eps; }
+
+    // 关闭流程中的保存模板：返回是否成功保存
+    private boolean promptSaveTemplateForClose() {
+        String name = JOptionPane.showInputDialog(this, "输入模板名称", "保存模板", JOptionPane.PLAIN_MESSAGE);
+        if (name == null) return false; // 取消
+        name = name.trim();
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "名称不能为空");
+            return false;
+        }
+        WatermarkTemplate existing = null;
+        for (WatermarkTemplate t : templates) {
+            if (name.equals(t.name)) { existing = t; break; }
+        }
+        WatermarkTemplate toSelect;
+        if (existing != null) {
+            int ans = JOptionPane.showConfirmDialog(this, "已存在同名模板，是否覆盖?", "确认", JOptionPane.YES_NO_OPTION);
+            if (ans != JOptionPane.YES_OPTION) return false;
+            buildTemplateFromUI(existing);
+            existing.updatedAt = System.currentTimeMillis();
+            toSelect = existing;
+        } else {
+            WatermarkTemplate t = new WatermarkTemplate();
+            t.id = UUID.randomUUID().toString();
+            t.name = name;
+            t.description = "";
+            t.createdAt = System.currentTimeMillis();
+            t.updatedAt = t.createdAt;
+            buildTemplateFromUI(t);
+            templates.add(t);
+            toSelect = t;
+        }
+        if (TemplateManager.saveTemplates(templates)) {
+            refreshTemplateComboBox();
+            if (toSelect != null) templateComboBox.setSelectedItem(toSelect);
+            return true;
+        } else {
+            JOptionPane.showMessageDialog(this, "模板保存失败", "错误", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
     }
 }
