@@ -32,7 +32,7 @@ PhotoWatermark 是一个功能强大且易于使用的图片批量加水印工�
    ```
 3. 运行（GUI）：
    ```sh
-   java -jar PhotoWatermark.jar
+   java -cp target/classes PhotoWatermarkGUI
    ```
 4. 运行（命令行模式）：
    ```sh
@@ -98,6 +98,7 @@ pom.xml                    # Maven 构建文件
 ## 变更摘要（近期更新）
 | 类型 | 说明 |
 |------|------|
+| fix | 删除旧的PhotoWatermark.jar文件，更新运行方式为直接调用GUI主类 |
 | feat | 新增文字 & 图片水印旋转功能（中心旋转） |
 | perf | 预览改为后台异步 + 任务取消，显著降低卡顿 |
 | feat | 默认文字水印字号由 36 调整为 150 |
