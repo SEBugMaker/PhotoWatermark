@@ -10,7 +10,7 @@ echo "🚀 开始创建GitHub Release..."
 # 配置信息
 REPO_OWNER="SEBugMaker"
 REPO_NAME="PhotoWatermark"
-TAG_NAME="v1.0.0"
+TAG_NAME="release1.0"
 RELEASE_NAME="PhotoWatermark v1.0.0"
 
 # 文件路径
