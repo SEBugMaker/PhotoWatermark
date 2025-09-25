@@ -1344,16 +1344,60 @@ public class PhotoWatermarkGUI extends JFrame {
         updateStatusLabel();
     }
 
+    // 辅助方法：获取文件后缀
+    private String getFileSuffix(File f) {
+        String n = f.getName();
+        int dot = n.lastIndexOf('.');
+        return dot == -1 ? "" : n.substring(dot + 1).toLowerCase();
+    }
+
+    // 辅助方法：读取首帧图片，兼容tiff/bmp
+    private BufferedImage readFirstImage(File file) throws IOException {
+        String suffix = getFileSuffix(file);
+        java.util.Iterator<javax.imageio.ImageReader> it = javax.imageio.ImageIO.getImageReadersBySuffix(suffix);
+        if (it.hasNext()) {
+            javax.imageio.ImageReader reader = it.next();
+            try (javax.imageio.stream.ImageInputStream iis = javax.imageio.ImageIO.createImageInputStream(file)) {
+                reader.setInput(iis, true, true);
+                return reader.read(0);
+            } finally {
+                reader.dispose();
+            }
+        }
+        return javax.imageio.ImageIO.read(file);
+    }
+
+    // 修改后的addImage方法，支持tiff/bmp缩略图
     private void addImage(File file) {
         try {
-            ImageIcon icon = new ImageIcon(file.getAbsolutePath());
-            Image img = icon.getImage().getScaledInstance(THUMB_WIDTH, THUMB_HEIGHT, Image.SCALE_SMOOTH);
-            icon = new ImageIcon(img);
+            BufferedImage original = readFirstImage(file);
+            if (original == null) throw new IOException("无法读取: " + file.getName());
+            int ow = original.getWidth();
+            int oh = original.getHeight();
+            if (ow <= 0 || oh <= 0) throw new IOException("尺寸异常: " + file.getName());
+            double scale = Math.min((double) THUMB_WIDTH / ow, (double) THUMB_HEIGHT / oh);
+            int tw = Math.max(1, (int) Math.round(ow * scale));
+            int th = Math.max(1, (int) Math.round(oh * scale));
+            BufferedImage thumb = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = thumb.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.drawImage(original, 0, 0, tw, th, null);
+            g.dispose();
+            ImageIcon icon = new ImageIcon(thumb);
             icon.setDescription(file.getName());
             imageListModel.addElement(icon);
-            // Removed updateStatusLabel() here to avoid off-by-one during batch imports
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "无法加载图片: " + file.getName(), "错误", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception ex) {
+            // 回退旧方案
+            try {
+                ImageIcon icon = new ImageIcon(file.getAbsolutePath());
+                Image img = icon.getImage().getScaledInstance(THUMB_WIDTH, THUMB_HEIGHT, Image.SCALE_SMOOTH);
+                icon = new ImageIcon(img);
+                icon.setDescription(file.getName());
+                imageListModel.addElement(icon);
+            } catch (Exception ignore) {
+                JOptionPane.showMessageDialog(this, "无法加载图片: " + file.getName(), "错误", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
